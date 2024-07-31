@@ -124,6 +124,9 @@ let
     # For YubiKey salt storage
     mkdir -p /crypt-storage
 
+    # Cryptkey device mount point
+    mkdir -p /crypt-cryptkey
+
     ${optionalString luks.gpgSupport ''
     export GPG_TTY=$(tty)
     export GNUPGHOME=/crypt-ramfs/.gnupg
@@ -141,6 +144,7 @@ let
     stty echo
     umount /crypt-storage 2>/dev/null
     umount /crypt-ramfs 2>/dev/null
+    umount /crypt-cryptkey 2>/dev/null
   '';
 
   openCommand = name: dev: assert name == dev.name;
@@ -478,11 +482,50 @@ let
     }
     ''}
 
+    ${optionalString ((dev.cryptkeyDevice != null) && (dev.cryptkeyPath != null)) ''
+
+    open_with_file() {
+      if wait_target "cryptkey device" ${dev.cryptkeyDevice}; then
+          # First mount the drive
+          mount -t ${dev.cryptkeyFstype} ${dev.cryptkeyDevice} /crypt-cryptkey
+          cs_status=$?
+          if [ $cs_status -ne 0 ]; then
+            echo "Could not mount ${dev.cryptkeyDevice}!"
+            if ! try_empty_passphrase; then
+              ${if dev.fallbackToPassword then "echo" else "die"} "${dev.cryptkeyDevice} is unavailable"
+              echo " - failing back to interactive password prompt"
+              do_open_passphrase
+            fi
+          fi
+
+          ${csopen} --key-file=/crypt-cryptkey/${dev.cryptkeyPath}
+          cs_status=$?
+          if [ $cs_status -ne 0 ]; then
+            echo "Key file at ${dev.cryptkeyPath} not found!"
+            if ! try_empty_passphrase; then
+              ${if dev.fallbackToPassword then "echo" else "die"} "Key file at ${dev.cryptkeyPath} could not be opened"
+              echo " - failing back to interactive password prompt"
+              do_open_passphrase
+            fi
+          fi
+      else
+          # If the key file never shows up we should also try the empty passphrase
+          if ! try_empty_passphrase; then
+             ${if dev.fallbackToPassword then "echo" else "die"} "${dev.cryptkeyDevice} is unavailable"
+             echo " - failing back to interactive password prompt"
+             do_open_passphrase
+          fi
+      fi
+    }
+    ''}
+
     # commands to run right before we mount our device
     ${dev.preOpenCommands}
 
     ${if (luks.yubikeySupport && (dev.yubikey != null)) || (luks.gpgSupport && (dev.gpgCard != null)) || (luks.fido2Support && fido2luksCredentials != []) then ''
     open_with_hardware
+    '' else if ((dev.cryptkeyDevice != null) && (dev.cryptkeyPath != null)) then ''
+    open_with_file
     '' else ''
     open_normally
     ''}
@@ -619,6 +662,36 @@ in
             description = ''
               The name of the file or block device that
               should be used as header for the encrypted device.
+            '';
+          };
+
+          cryptkeyDevice = mkOption {
+            default = null;
+            example = "/dev/sdb1";
+            type = types.nullOr types.str;
+            description = ''
+              The name of the device containing the key file that
+              should be used as the decryption key for the encrypted
+              device.
+            '';
+          };
+
+          cryptkeyPath = mkOption {
+            default = null;
+            example = "key.sec";
+            type = types.nullOr types.str;
+            description = ''
+              The path to the key file that should be used as the
+              decryption key for the encrypted device.
+            '';
+          };
+
+          cryptkeyFstype = mkOption {
+            default = "ext4";
+            example = "vfat";
+            type = types.str;
+            description = ''
+              The filesystem of the device containing the key file.
             '';
           };
 
