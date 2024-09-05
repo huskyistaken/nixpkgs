@@ -131,6 +131,16 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+
+    users.users.mautrix-telegram = {
+      isSystemUser = true;
+      group = "mautrix-telegram";
+      home = dataDir;
+      description = "Mautrix-Telegram bridge user";
+    };
+
+    users.groups.mautrix-telegram = {};
+
     systemd.services.mautrix-telegram = {
       description = "Mautrix-Telegram, a Matrix-Telegram hybrid puppeting/relaybot bridge.";
 
@@ -174,7 +184,8 @@ in {
         ProtectKernelModules = true;
         ProtectControlGroups = true;
 
-        DynamicUser = true;
+        User = "mautrix-telegram";
+        Group = "mautrix-telegram";
         PrivateTmp = true;
         WorkingDirectory = pkgs.mautrix-telegram; # necessary for the database migration scripts to be found
         StateDirectory = baseNameOf dataDir;
