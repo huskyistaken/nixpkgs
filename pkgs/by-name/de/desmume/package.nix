@@ -99,5 +99,6 @@ stdenv.mkDerivation (finalAttrs: {
     license = licenses.gpl2Plus;
     maintainers = [ ];
     platforms = platforms.unix;
+    mainProgram = "desmume";
   };
 })
